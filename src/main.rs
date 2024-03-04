@@ -32,19 +32,20 @@ fn main() {
 
 }
 
-/// The initial setup function
+/// The initial setup system
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut query_camera: Query<&mut OrthographicProjection, With<CameraMarker>>,
+    //mut query_camera: Query<&mut OrthographicProjection, With<CameraMarker>>,
     //mut tile_map: ResMut<TileMap>,
 ) {
     
+    // =_=_=_= Initialize the triangle grid =_=_=_=
     let mut tiles: Tiles = HashMap::new();
-    //tile_map.tiles = tiles;
-    //grid(&mut tile_map.tiles);
     grid(&mut tiles);
+
+    // TO FIX: Camera needs to be implemented (scale, etc)
 
     //use bevy::render::camera::ScalingMode;
     commands.spawn((Camera2dBundle::default(), CameraMarker));
@@ -52,15 +53,18 @@ fn setup(
     //projection.scale = 1.5;
     //projection.scaling_mode = ScalingMode::WindowSize(4.0);
     
-    const angle_up: f32 = 0.0;
-    const angle_down: f32 = 180.0;
-    let mut angle: f32 = 0.0;
+    const ANGLE_UP: f32 = 0.0;
+    const ANGLE_DOWN: f32 = 180.0;
+    let mut angle: f32;
 
+    // Iterate through the map of tiles and render them
     for triangle in tiles.keys() {
+
+        // Fetch triangle coords, convert to cartesian coords, set angle
         let temp_pos = cart_coords(*triangle);
+        if is_up(*triangle){ angle = ANGLE_UP } else { angle = ANGLE_DOWN }
 
-        if is_up(*triangle){ angle = angle_up } else { angle = angle_down }
-
+        // Spawn a triangle
         commands.spawn(MaterialMesh2dBundle {
             mesh: bevy::sprite::Mesh2dHandle(meshes.add(Mesh::from(RegularPolygon::new(10.0, 3)))),
             material: materials.add(Color::RED.into()),
@@ -71,16 +75,13 @@ fn setup(
             ).with_rotation(Quat::from_rotation_z((angle).to_radians())),
             ..default()
         });
-
-
     }
-
 
 }
 
 /// Generate triangular-hex grid
 fn grid(tiles: &mut HashMap<(i32, i32, i32), Tile>) {
-    const GRID_SIZE: i32 = 12;
+    const GRID_SIZE: i32 = 8; // 12
 
     #[derive(Copy, Clone)]
     enum Dir {
@@ -88,9 +89,11 @@ fn grid(tiles: &mut HashMap<(i32, i32, i32), Tile>) {
         SW, S, SE,
     }
 
+    // process_q stores latest triangles and stores neighbors in next_q
     let mut process_q: VecDeque<(Dir, (i32, i32, i32))> = VecDeque::new();
     let mut next_q: VecDeque<(Dir, (i32, i32, i32))> = VecDeque::new();
 
+    // Initial six triangles
     process_q.push_back((Dir::NW, (0, 1, 1)));
     process_q.push_back((Dir::N, (0, 1, 0)));
     process_q.push_back((Dir::NE, (1, 1, 0)));
@@ -101,13 +104,13 @@ fn grid(tiles: &mut HashMap<(i32, i32, i32), Tile>) {
     let mut q_itr = 0;
     let mut next = true;
 
-    while q_itr < GRID_SIZE {
+    while q_itr < GRID_SIZE { // Go through n growth steps as defined by GRID_SIZE
 
-        while !process_q.is_empty() {
+        while !process_q.is_empty() { // Go through the entire queue
 
             let temp_tuple = process_q.front().unwrap().1;
 
-            if (q_itr + 1 != GRID_SIZE) {
+            if q_itr + 1 != GRID_SIZE { // Don't go through neighbors on the last step
 
                 // Instanciate neighbors
                 match process_q.front().unwrap().0 {
@@ -153,7 +156,7 @@ fn grid(tiles: &mut HashMap<(i32, i32, i32), Tile>) {
                     },
                     Dir::SE => if is_up(temp_tuple) {
                         // Is_up: add NE and S points
-                        next_q.push_back((Dir::NE, (temp_tuple.0 - 1, temp_tuple.1, temp_tuple.2)));
+                        next_q.push_back((Dir::NE, (temp_tuple.0, temp_tuple.1, temp_tuple.2 - 1)));
                         next_q.push_back((Dir::S, (temp_tuple.0, temp_tuple.1 - 1, temp_tuple.2)));
                     } else {
                         // Is_down: add SE point
@@ -162,27 +165,22 @@ fn grid(tiles: &mut HashMap<(i32, i32, i32), Tile>) {
                 }
             }
 
-            //process_q.pop_front().unwrap().1
+            // Create a new Tile insance and add it to the map
             let newtile: Tile = Tile {pos: process_q.pop_front().unwrap().1, height: 0.0};
-            
             tiles.insert(newtile.pos, newtile);            
         } 
-        
 
-        // process_q is empty and next_q has data to be moved
+        // Move all data in next_q to process_q  <== OPTIMIZE
         for x in next_q.iter() {
             process_q.push_back(*x);
         }
-        next_q.clear(); // Sanity check
+        next_q.clear();
 
         // Only increment q_itr every two grow operations
         if !next { q_itr += 1; } 
             
         next = !next;
-        
     }
-
-
 }
 
 /// Returns true if triangle points up, and false if it points down
