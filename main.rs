@@ -559,11 +559,9 @@ fn input_handler(
     //}
     if keyboard_input.pressed(KeyCode::KeyZ) {
         for mut transform in &mut query {
-            
+            transform.rotate_z(time.delta_seconds() / 1.2);
         }
     }
-
-
 }
 
 
