@@ -115,7 +115,7 @@ fn setup(mut commands: Commands)
             camera: Camera
             {
                 // Change the background color of the window
-                clear_color: ClearColorConfig::Custom(Color::rgb(0.2, 0.2, 0.7)),
+                clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.2, 0.6274509)),
 
                 ..default()
             },
@@ -547,23 +547,21 @@ fn input_handler(
     time: Res<Time>,
 ) {
     
-    //if keyboard_input.pressed(KeyCode::KeyX) {
-        // for mut transform in &mut query {
-        //     transform.rotate_x(time.delta_seconds() / 1.2);
-        // }
-    //}
+    if keyboard_input.pressed(KeyCode::KeyX) {
+        for mut transform in &mut query {
+            transform.rotate_x(time.delta_seconds() / 1.2);
+        }
+    }
     //if keyboard_input.pressed(KeyCode::KeyY) {
         for mut transform in &mut query {
             transform.rotate_y(time.delta_seconds() / 1.2);
         }
     //}
-    // if keyboard_input.pressed(KeyCode::KeyW) {
-    //     for mut transform in &mut query2 {
-            
-    //     }
-    // }
-
-
+    if keyboard_input.pressed(KeyCode::KeyZ) {
+        for mut transform in &mut query {
+            transform.rotate_z(time.delta_seconds() / 1.2);
+        }
+    }
 }
 
 
