@@ -7,7 +7,9 @@ use bevy::
         mesh::{Indices, VertexAttributeValues},
         render_asset::RenderAssetUsages,
         render_resource::{PrimitiveTopology, Extent3d, TextureDimension, TextureFormat},
+        camera::RenderTarget,
     },
+    window::WindowRef,
 };
 
 fn main()
@@ -79,16 +81,32 @@ fn main()
 
     //let mut 
     
-    // Start the main menu app
     let h = HeightValues { values: Vec::<Vec<Vec<f32>>>::new() };
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .insert_resource(h)
-        .add_systems(Startup, (setup, setup2))
-        .add_systems(Update, (button_system, input_handler))
-        .run();
 
+    // Create the main menu app
+    let mut app = App::new();
 
+    // Insert the heights into the app
+    app.insert_resource(h);
+
+    // Add systems to the main app
+    app.add_plugins(DefaultPlugins)
+        .init_state::<AppState>()
+        .add_systems(OnEnter(AppState::MainMenu), (camera_setup, setup, setup2))
+        .add_systems(Update, (button_system.run_if(in_state(AppState::MainMenu)), input_handler.run_if(in_state(AppState::MainMenu))))
+        .add_systems(OnEnter(AppState::Simulate), setup2)
+        .add_systems(Update, input_handler.run_if(in_state(AppState::Simulate)));
+
+    // Run the main app
+    app.run();
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
+enum AppState
+{
+    #[default]
+    MainMenu,
+    Simulate,
 }
 
 #[derive(Component)]
@@ -113,6 +131,29 @@ struct HeightValues {
     values: Vec<Vec<Vec<f32>>>,
 }
 
+// This function creates a camera (can be used for main app and subapp)
+fn camera_setup(mut commands: Commands)
+{
+    // Create the UI window (camera)
+    commands.spawn
+    (
+        Camera3dBundle
+        {
+            transform: Transform::from_translation(Vec3::new(0., 0., 10.0)).looking_at(Vec3::ZERO, Vec3::Y),
+            camera: Camera
+            {
+                target: RenderTarget::default(),
+
+                // Change the background color of the window
+                clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.2, 0.6274509)),
+
+                ..default()
+            },
+
+            ..default()
+        }
+    );
+}
 
 // This function handles
 //  1. When a button is pressed
@@ -130,6 +171,12 @@ fn button_system
     >,
 
     mut exit_app: EventWriter<AppExit>,
+
+    mut commands: Commands,
+
+    mut entity_query: Query<(Entity, &Transform), With<Shape>>,
+    //mut window_query: Query<(Entity, &Camera), With<Transform>>,
+    mut next_state: ResMut<NextState<AppState>>,
 )
 {
     for (interaction, menu_action, mut border_color) in &mut interaction_query
@@ -144,7 +191,46 @@ fn button_system
                 {
                     MenuAction::Play =>
                     {
-                        // If the start button was pressed, start the simulation.
+                        // If the start button was pressed, close the main menu and start the simulation.
+
+                        // Delete the icosahedron
+                        let (entity, _) = entity_query.single_mut();
+                        commands.entity(entity).despawn();
+
+                        //let (window_entity, mut test) = window_query.single_mut();
+
+                        // Create the second window
+                        let second_window = commands.spawn
+                        (
+                            Window
+                            {
+                                title: "Simulation".to_owned(),
+                                ..default()
+                            }
+                        ).id();
+
+                        // Create a camera for the new window
+                        commands.spawn
+                        (
+                            Camera3dBundle
+                            {
+                                transform: Transform::from_translation(Vec3::new(0., 0., 10.0)).looking_at(Vec3::ZERO, Vec3::Y),
+                                camera: Camera
+                                {
+                                    target: RenderTarget::Window(WindowRef::Entity(second_window)),
+
+                                    // Change the background color of the window
+                                    clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.2, 0.6274509)),
+
+                                    ..default()
+                                },
+
+                                ..default()
+                            }
+                        );
+
+                        // Switch app states to start the simulation
+                        next_state.set(AppState::Simulate);
                     }
 
                     MenuAction::LoadFile =>
@@ -183,23 +269,6 @@ fn button_system
 // This function handles setting up the main menu window and other components.
 fn setup(mut commands: Commands)
 {
-    // Create the UI window (camera)
-    commands.spawn
-    (
-        Camera3dBundle
-        {
-            transform: Transform::from_translation(Vec3::new(0., 0., 10.0)).looking_at(Vec3::ZERO, Vec3::Y),
-            camera: Camera
-            {
-                // Change the background color of the window
-                clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.2, 0.6274509)),
-
-                ..default()
-            },
-
-            ..default()
-        }
-    );
 
     // Spawn in a text field for the title
     commands.spawn
@@ -576,6 +645,7 @@ fn setup2(
 	mut meshes: ResMut<Assets<Mesh>>,
     //mut images: ResMut<Assets<Image>>,
     h: ResMut<HeightValues>,
+    current_state: ResMut<State<AppState>>,
 ) {
     //not certain what this is doing, this is probably where we want to start doing visuals
     let debug_material = materials.add(StandardMaterial {
@@ -588,7 +658,20 @@ fn setup2(
     //this is the call to create the mesh, and where we create what i think is basically a pointer to it
     let globe_mesh_handle: Handle<Mesh> = meshes.add(create_globe_mesh(6, &mut h.into_inner().values));
 
-    let world_pos = [3.,-1.,0.];
+    let world_pos: [f32; 3];
+
+    match current_state.get()
+    {
+        AppState::MainMenu =>
+        {
+            world_pos = [3., -1., 0.];
+        }
+        
+        AppState::Simulate =>
+        {
+            world_pos = [0., 0., 0.];
+        }
+    }
     //loads mesh into scene
 	commands.spawn((
         PbrBundle {
