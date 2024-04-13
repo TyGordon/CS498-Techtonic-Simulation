@@ -81,7 +81,7 @@ fn main()
 
     //let mut 
     
-    let h = HeightValues { values: Vec::<Vec<Vec<f32>>>::new() };
+    let h = HeightValues { values: Vec::<Vec<f32>>::new() };
 
     // Create the main menu app
     let mut app = App::new();
@@ -128,7 +128,7 @@ enum MenuAction
 
 #[derive(Resource)]
 struct HeightValues {
-    values: Vec<Vec<Vec<f32>>>,
+    values: Vec<Vec<f32>>,
 }
 
 // This function creates a camera (can be used for main app and subapp)
@@ -656,7 +656,7 @@ fn setup2(
     //let mut heights = &h.values;
     //let mut heights :std::vec::Vec<Vec<Vec<f32>>> = Vec::<Vec<Vec<f32>>>::new();
     //this is the call to create the mesh, and where we create what i think is basically a pointer to it
-    let globe_mesh_handle: Handle<Mesh> = meshes.add(create_globe_mesh(6, &mut h.into_inner().values));
+    let globe_mesh_handle: Handle<Mesh> = meshes.add(create_globe_rect_mesh(100, 100, &mut h.into_inner().values));
 
     let world_pos: [f32; 3];
 
@@ -734,9 +734,7 @@ fn input_handler(
         changed = true;
         for i in 0..heights.len(){
             for j in 0..heights[i].len(){
-                for k in 0..heights[i][j].len(){
-			        heights[i][j][k] = heights[i][j][k] * 1.1;
-                }
+                heights[i][j] = heights[i][j] * 1.1;
 		    }
 	    }
 	}
@@ -745,9 +743,7 @@ fn input_handler(
         changed = true;
         for i in 0..heights.len(){
             for j in 0..heights[i].len(){
-                for k in 0..heights[i][j].len(){
-			        heights[i][j][k] = heights[i][j][k] / 1.1;
-                }
+			    heights[i][j] = heights[i][j] * 1.1;
 		    }
 	    }
 	}
@@ -755,7 +751,7 @@ fn input_handler(
     if changed {
         for mesh in &mut mesh_query{
             let mesh_mut = meshes.get_mut(mesh);
-            mesh_mut.unwrap().insert_attribute(Mesh::ATTRIBUTE_POSITION, tris_from_heights(heights));
+            mesh_mut.unwrap().insert_attribute(Mesh::ATTRIBUTE_POSITION, tris_from_rect_heights(heights));
         }
     }
 				//vs[i][0] = vs[i][0] * (1. + 0.25 * time.delta_seconds().cos());
@@ -766,64 +762,60 @@ fn input_handler(
 }
 
 
-#[rustfmt::skip]
-fn create_globe_mesh(subdivisions: u32, heights: &mut Vec<Vec<Vec<f32>>>,) -> Mesh {
-    let res = 2_i32.pow(subdivisions); //short for resolution, this is just an important value used many places
-    //vertex positions vector calculation:
-    let mut i = 0;
-    while i<4{
-        let mut j = 0;
-        let mut row_vec = vec![];
-        while j<5{
-			let mut v = 0;
-            let mut col_vec = vec![];
-            while v<(res+1)*(res+2)/2 {
-                col_vec.push(1.);
-                v+=1;
-            }
-            row_vec.push(col_vec);
-			j+=1;
+fn create_globe_rect_mesh(h_verts: u32, v_verts: u32, heights: &mut Vec<Vec<f32>>) -> Mesh {
+    for _row_index in 0..v_verts{ //represents which row we are in
+		let mut row_vec = vec![];
+		for _col_index in 0..h_verts{		
+			row_vec.push(1.);
+            //println!("height at row {} and col {}", _row_index, _col_index);
 		}
-        heights.push(row_vec);
-        i +=1;
+		heights.push(row_vec);
+	}
+
+    let verts = tris_from_rect_heights(heights);
+    let mut norms = Vec::new();
+
+    for i in 0..verts.len(){
+		norms.push(verts[i]);
+        //println!("vertex at {}: {}, {}, {}", i, verts[i][0], verts[i][1], verts[i][2]);
+	}
+
+
+    let mut indices_by_tri = Vec::new();
+
+    for i in 0..h_verts{ //top row only has 1 tri each
+        indices_by_tri.push(((1 + i)%h_verts) + 1);
+        indices_by_tri.push(i + 1);
+        indices_by_tri.push(0);
+        //println!("linking vertices: {}, {}, {}", ((1 + i)%h_verts) + 1, i + 1, 0);
     }
 
-    //println!("Heights: {:?}", heights);
+    for i in 0..(v_verts-3){
+		for j in 0..h_verts{
+            indices_by_tri.push((i+1)*h_verts + ((j+1)%h_verts) + 1);
+            indices_by_tri.push((i+1)*h_verts + j + 1);
+			indices_by_tri.push(i*h_verts + j + 1);
+            //println!("linking vertices: {}, {}, {}", (i+1)*h_verts + ((j+1)%h_verts) + 1, (i+1)*h_verts + j + 1, i*h_verts + j + 1);
+
+			indices_by_tri.push(i*h_verts + ((j+1)%h_verts) + 1);
+			indices_by_tri.push((i+1)*h_verts + ((j+1)%h_verts) + 1);
+			indices_by_tri.push(i*h_verts + j + 1);
+            //println!("linking vertices: {}, {}, {}", i*h_verts + ((j+1)%h_verts) + 1, (i+1)*h_verts + ((j+1)%h_verts) + 1, i*h_verts + j + 1);
+		}
+	}
+
+    for i in 0..h_verts{//bottom row only has 1 tri each
+		indices_by_tri.push(h_verts*(v_verts-3) + ((1 + i)%h_verts) + 1); 
+		indices_by_tri.push(h_verts*(v_verts-2) + 1); 
+		indices_by_tri.push(h_verts*(v_verts-3) + i + 1); 
+        //println!("linking vertices: {}, {}, {}", h_verts*(v_verts-2) + ((1 + i)%h_verts) + 1, h_verts*(v_verts-2) + i + 1, h_verts*(v_verts-1) + 1);
+	}
+
     
-    
 
-
-
-    let verts = tris_from_heights(heights);
-    
-    let mut norms = Vec::new();//create vector to hold calculated normals
-
-    i = 0;
-    while i < verts.len(){//TODO: neither of these approaches will work once verts have variable heights
-        //if you want to use the other type of normal comment out all code relevant to the current type
-        //unsmoothed normals
-        
-        let x = (verts[i][0] + verts[i+1][0] + verts[i+2][0])/3.;
-        let y = (verts[i][1] + verts[i+1][1] + verts[i+2][1])/3.;
-        let z = (verts[i][2] + verts[i+1][2] + verts[i+2][2])/3.;
-        let d1 = (x*x+y*y+z*z).sqrt();
-        norms.push([x/d1, y/d1, z/d1]);
-        norms.push([x/d1, y/d1, z/d1]);
-        norms.push([x/d1, y/d1, z/d1]);
-        i = i+3;
-        
-        //smoothed normals
-        //norms.push([verts[i][0]/d, verts[i][1]/d, verts[i][2]/d]);
-        //i=i+1;
-    }
-
-    //put verts into mesh
     Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
     .with_inserted_attribute(
         Mesh::ATTRIBUTE_POSITION,
-        // Each array is an [x, y, z] coordinate in local space.
-        // Meshes always rotate around their local [0, 0, 0] when a rotation is applied to their Transform.
-        // By centering our mesh around the origin, rotating the mesh preserves its center of mass.
         verts.clone(),
     )
 
@@ -834,227 +826,324 @@ fn create_globe_mesh(subdivisions: u32, heights: &mut Vec<Vec<Vec<f32>>>,) -> Me
     )
     
     //tell mesh which verts are connected
-    .with_inserted_indices(Indices::U32((0u32..(verts.len() as u32)).collect::<Vec<_>>()))
+    .with_inserted_indices(Indices::U32(indices_by_tri))
 }
 
-fn tris_from_heights(heights: &mut Vec<Vec<Vec<f32>>>) -> Vec<[f32; 3]>{
 
-    //useful numbers: p represents phi, d is the magnitude of vert on a major triangle 
-    let p: f32 = (1.0 + (5.0_f32).sqrt()) / 2.0;
-    let d: f32 = (1.0 + p *p).sqrt();
-    let res: i32 = (((1 + 8*heights[0][0].len()) as f64).sqrt() as i32 - 3)/2;
-    //created to use later
-    let main_verts = vec![
-        [0., d, 0.],
+fn tris_from_rect_heights(heights: &mut Vec<Vec<f32>>) -> Vec<[f32; 3]>{
+    let mut verts: Vec<[f32; 3]> = Vec::new();
 
-        [0., 0.85065, -1.7013],
-        [p, 0.85065, -(d*d - p * p - 0.85065 * 0.85065).sqrt()],
-		[1., 0.85065, (d*d - 1. - 0.85065*0.85065).sqrt()],
-		[-1., 0.85065, (d*d - 1. - 0.85065*0.85065).sqrt()],
-		[-p, 0.85065, -(d*d - p*p - 0.85065*0.85065).sqrt()],
+    verts.push([0., heights[0][0], 0.]); //index 0
+     
+    for i in 1..(heights.len()-1){ //i is which row, y coord. indeces 1 to h_verts * (v_verts - 2)
+        let v_val: f32 = (i as f32)/(heights.len() as f32 - 1.);
+        //println!("Adding row {}", i);
+		for j in 0..heights[i].len(){ //j is which column, x coord
+            let h_angle: f32 = 2. * std::f32::consts::PI * (j as f32)/(heights[i].len() as f32);
+			verts.push([heights[i][j] * h_angle.cos() * (0.25 - (v_val-0.5) * (v_val-0.5)).sqrt() * 2., heights[i][j] * (1. - 2. * v_val), heights[i][j] * h_angle.sin() * (0.25 - (v_val-0.5) * (v_val-0.5)).sqrt() * 2.]);
+            //println!("adding vert with coords ({}, {}, {})", verts[verts.len()-1][0], verts[verts.len()-1][1], verts[verts.len()-1][2]);
+		}
+	}
 
-        [-1., -0.85065, -(d*d - 1. - 0.85065*0.85065).sqrt()],
-        [1., -0.85065, -(d*d - 1. - 0.85065*0.85065).sqrt()],
-        [p, -0.85065, (d*d - p*p - 0.85065*0.85065).sqrt()],
-        [0., -0.85065, 1.7013],
-        [-p, -0.85065, (d*d - p*p - 0.85065*0.85065).sqrt()],
+    verts.push([0., -heights[heights.len()-1][0], 0.]); // index h_verts * (v_verts - 1) + 1
 
-        [0., -d, 0.]
-    ];
+    //format of tris:
+    //[row 0 vert 0, row1 vert 0, ... row1 vert h_verts-1, row2 vert 0 ... row v_verts-2 vert h_verts-1, row v_verts-1 vert 0]
 
-    let mut verts = Vec::new();
-    
-    let mut f = 0; //which face
-    while f<5 { //iterates over the 5 major triangles which share the topmost vert
-        let v0 = main_verts[0];//c vert
-        let v1 = main_verts[f+1];//b vert
-        let v2 = main_verts[((f+1)%5)+1];//a vert
-
-        let mut col_index = 0;
-        while col_index < res{
-            let mut row_index = 0;
-            while row_index <= col_index*2{
-                
-                let mut iter = 0;
-                let mut vert0 = [0., 0., 0.];//c vert
-                let mut vert1 = [0., 0., 0.];//a vert
-                let mut vert2 = [0., 0., 0.];//b vert
-
-                if row_index%2==0{
-                    while iter<3{
-                        vert0[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
-                        vert1[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index + 1 - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
-                        vert2[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2 + 1) as f32 * v2[iter])/res as f32;
-
-                        iter = iter+1;
-                    }
-                } else {
-                    while iter<3{
-                        vert0[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2 + 1) as f32 * v2[iter])/res as f32;
-                        vert1[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index+1)/2) as f32 * v1[iter] + ((row_index+1)/2) as f32 * v2[iter])/res as f32;
-                        vert2[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2) as f32 * v2[iter])/res as f32;
-                        
-                        iter = iter+1;
-                    }
-                }
-
-                let len0 = (vert0[0]*vert0[0] + vert0[1]*vert0[1] + vert0[2]*vert0[2]).sqrt();
-                let len1 = (vert1[0]*vert1[0] + vert1[1]*vert1[1] + vert1[2]*vert1[2]).sqrt();
-                let len2 = (vert2[0]*vert2[0] + vert2[1]*vert2[1] + vert2[2]*vert2[2]).sqrt();
-                
-                //order is weird, but important
-                //values correspond to:
-                //right vert
-                //vertical vert
-                //left vert
-                verts.push([vert1[0] * get_height(&heights, f, 1+row_index/2,   col_index-(row_index+1)/2)/len1,   vert1[1]*get_height(&heights, f, 1+row_index/2,   col_index-(row_index+1)/2)/len1,   vert1[2]*get_height(&heights, f, 1+row_index/2,   col_index-(row_index+1)/2)/len1]);
-                verts.push([vert0[0] * get_height(&heights, f, (row_index+1)/2, col_index-row_index/2)/len0,       vert0[1]*get_height(&heights, f, (row_index+1)/2, col_index-row_index/2)/len0,       vert0[2]*get_height(&heights, f, (row_index+1)/2, col_index-row_index/2)/len0]);
-                verts.push([vert2[0] * get_height(&heights, f, row_index/2,     col_index+1-(row_index+1)/2)/len2, vert2[1]*get_height(&heights, f, row_index/2,     col_index+1-(row_index+1)/2)/len2, vert2[2]*get_height(&heights, f, row_index/2,     col_index+1-(row_index+1)/2)/len2]);
-
-
-                row_index = row_index+1;
-            }
-            col_index=col_index+1;
-            
-        }
-
-
-        f = f+1;
-    }
-
-    let vert_order = [//which vertices to use for each major triangle not on the top or bottom
-        [6,1,7],
-        [7,1,2],
-        [7,2,8],
-		[8,2,3],
-		[8,3,9],
-		[9,3,4],
-		[9,4,10],
-		[10,4,5],
-		[10,5,6],
-		[6,5,1]
-    ];
-    f = 0;
-
-    while f< 10{ //iterate through the 10 major triangles that do not have the topmost or bottommost vert
-        let v0 = main_verts[vert_order[f][0]];//f%2==0: b vert, f%2==1: c vert
-        let v1 = main_verts[vert_order[f][1]];//f%2==0: c vert, f%2==1: b vert
-        let v2 = main_verts[vert_order[f][2]];//a vert
-
-        let mut col_index = 0;
-        while col_index < res{
-            let mut row_index = 0;
-            while row_index <= 2*col_index{
-                
-                let mut iter = 0;
-                let mut vert0 = [0., 0., 0.];
-                let mut vert1 = [0., 0., 0.];
-                let mut vert2 = [0., 0., 0.];
-
-                if row_index%2==0{
-                    while iter<3{
-                        vert0[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
-                        vert1[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index + 1 - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
-                        vert2[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2 + 1) as f32 * v2[iter])/res as f32;
-
-                        iter = iter+1;
-                    }
-
-                    
-                } else {
-                    while iter<3{
-                        vert0[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2 + 1) as f32 * v2[iter])/res as f32;
-                        vert1[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index+1)/2) as f32 * v1[iter] + ((row_index+1)/2) as f32 * v2[iter])/res as f32;
-                        vert2[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2) as f32 * v2[iter])/res as f32;
-                        
-                        iter = iter+1;
-                    }
-                }
-
-                let len0 = (vert0[0]*vert0[0] + vert0[1]*vert0[1] + vert0[2]*vert0[2]).sqrt();
-                let len1 = (vert1[0]*vert1[0] + vert1[1]*vert1[1] + vert1[2]*vert1[2]).sqrt();
-                let len2 = (vert2[0]*vert2[0] + vert2[1]*vert2[1] + vert2[2]*vert2[2]).sqrt();
-                
-                
-                //i am... surprised that this just works for both orientations of mega-tris
-                //but not complaining
-                //left corner
-                //vertical corner
-                //right corner
-                verts.push([vert0[0] * get_height(&heights, f+5, row_index/2,     col_index+1-(row_index+1)/2)/len0, vert0[1]*get_height(&heights, f+5, row_index/2,     col_index+1-(row_index+1)/2)/len0, vert0[2]*get_height(&heights, f+5, row_index/2,     col_index+1-(row_index+1)/2)/len0]);
-                verts.push([vert1[0] * get_height(&heights, f+5, (row_index+1)/2, col_index-row_index/2)/len1, vert1[1]*get_height(&heights, f+5, (row_index+1)/2, col_index-row_index/2)/len1, vert1[2]*get_height(&heights, f+5, (row_index+1)/2, col_index-row_index/2)/len1]);
-                verts.push([vert2[0] * get_height(&heights, f+5, 1+row_index/2,   col_index-(row_index+1)/2)/len2, vert2[1]*get_height(&heights, f+5, 1+row_index/2,   col_index-(row_index+1)/2)/len2, vert2[2]*get_height(&heights, f+5, 1+row_index/2,   col_index-(row_index+1)/2)/len2]);
-                
-
-                row_index = row_index+1;
-            }
-            col_index=col_index+1;
-            
-        }
-
-
-        f = f+1;
-    }
-    
-    f = 0;
-    while f<5 {//iterate over 5 major tris that share the bottommost vert
-        let v0 = main_verts[11];//c vert
-        let v1 = main_verts[10-f];//a vert
-        let v2 = main_verts[10-((f+1)%5)];//b vert
-
-        let mut col_index = 0;
-        while col_index < res{
-            let mut row_index = 0;
-            while row_index <= 2*col_index{
-                
-                let mut iter = 0;
-                let mut vert0 = [0., 0., 0.];
-                let mut vert1 = [0., 0., 0.];
-                let mut vert2 = [0., 0., 0.];
-
-                if row_index%2==0{
-                    while iter<3{
-                        vert0[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
-                        vert1[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index + 1 - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
-                        vert2[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2 + 1) as f32 * v2[iter])/res as f32;
-
-                        iter = iter+1;
-                    }
-
-                    
-                } else {
-                    while iter<3{
-                        vert0[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2 + 1) as f32 * v2[iter])/res as f32;
-                        vert1[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index+1)/2) as f32 * v1[iter] + ((row_index+1)/2) as f32 * v2[iter])/res as f32;
-                        vert2[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2) as f32 * v2[iter])/res as f32;
-                        
-                        iter = iter+1;
-                    }
-                }
-
-                let len0 = (vert0[0]*vert0[0] + vert0[1]*vert0[1] + vert0[2]*vert0[2]).sqrt();
-                let len1 = (vert1[0]*vert1[0] + vert1[1]*vert1[1] + vert1[2]*vert1[2]).sqrt();
-                let len2 = (vert2[0]*vert2[0] + vert2[1]*vert2[1] + vert2[2]*vert2[2]).sqrt();
-                
-                //order is weird, but important
-                verts.push([vert1[0] * get_height(&heights, f+15, row_index/2,     col_index+1-(row_index+1)/2)/len1,   vert1[1]*get_height(&heights, f+15, row_index/2,     col_index+1-(row_index+1)/2)/len1, vert1[2]*get_height(&heights, f+15, row_index/2,     col_index+1-(row_index+1)/2)/len1]);
-                verts.push([vert0[0] * get_height(&heights, f+15, (row_index+1)/2, col_index-row_index/2)/len0,         vert0[1]*get_height(&heights, f+15, (row_index+1)/2, col_index-row_index/2)/len0, vert0[2]*get_height(&heights, f+15, (row_index+1)/2, col_index-row_index/2)/len0]);
-                verts.push([vert2[0] * get_height(&heights, f+15, 1+row_index/2,   col_index-(row_index+1)/2)/len2,     vert2[1]*get_height(&heights, f+15, 1+row_index/2,   col_index-(row_index+1)/2)/len2, vert2[2]*get_height(&heights, f+15, 1+row_index/2,   col_index-(row_index+1)/2)/len2]);
-
-
-                row_index = row_index+1;
-            }
-            col_index=col_index+1;
-            
-        }
-
-
-        f = f+1;
-    }
     return verts;
 }
 
-fn get_height(heights: &Vec<Vec<Vec<f32>>>, major_tri: usize, a: i32, b: i32) -> f32{
-    //magic formula !!! who knows why it works but it does!!! i could probably re-derive it but please dont make me
-    return heights[(major_tri/5) as usize][(major_tri%5) as usize][(a+(b+a)*(b+a+1)/2) as usize];
-}
+
+
+//#[rustfmt::skip]
+//fn create_globe_ico_mesh(subdivisions: u32, heights: &mut Vec<Vec<Vec<f32>>>,) -> Mesh {
+//    let res = 2_i32.pow(subdivisions); //short for resolution, this is just an important value used many places
+//    //vertex positions vector calculation:
+//    let mut i = 0;
+//    while i<4{
+//        let mut j = 0;
+//        let mut row_vec = vec![];
+//        while j<5{
+//			let mut v = 0;
+//            let mut col_vec = vec![];
+//            while v<(res+1)*(res+2)/2 {
+//                col_vec.push(1.);
+//                v+=1;
+//            }
+//            row_vec.push(col_vec);
+//			j+=1;
+//		}
+//        heights.push(row_vec);
+//        i +=1;
+//    }
+//
+//    //println!("Heights: {:?}", heights);
+//    
+//    
+//
+//
+//
+//    let verts = tris_from_ico_heights(heights);
+//    
+//    let mut norms = Vec::new();//create vector to hold calculated normals
+//
+//    i = 0;
+//    while i < verts.len(){//TODO: neither of these approaches will work once verts have variable heights
+//        //if you want to use the other type of normal comment out all code relevant to the current type
+//        //unsmoothed normals
+//        
+//        let x = (verts[i][0] + verts[i+1][0] + verts[i+2][0])/3.;
+//        let y = (verts[i][1] + verts[i+1][1] + verts[i+2][1])/3.;
+//        let z = (verts[i][2] + verts[i+1][2] + verts[i+2][2])/3.;
+//        let d1 = (x*x+y*y+z*z).sqrt();
+//        norms.push([x/d1, y/d1, z/d1]);
+//        norms.push([x/d1, y/d1, z/d1]);
+//        norms.push([x/d1, y/d1, z/d1]);
+//        i = i+3;
+//        
+//        //smoothed normals
+//        //norms.push([verts[i][0]/d, verts[i][1]/d, verts[i][2]/d]);
+//        //i=i+1;
+//    }
+//
+//    //put verts into mesh
+//    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD)
+//    .with_inserted_attribute(
+//        Mesh::ATTRIBUTE_POSITION,
+//        // Each array is an [x, y, z] coordinate in local space.
+//        // Meshes always rotate around their local [0, 0, 0] when a rotation is applied to their Transform.
+//        // By centering our mesh around the origin, rotating the mesh preserves its center of mass.
+//        verts.clone(),
+//    )
+//
+//    //put normals into mesh
+//    .with_inserted_attribute(
+//        Mesh::ATTRIBUTE_NORMAL,
+//        norms,
+//    )
+//    
+//    //tell mesh which verts are connected
+//    .with_inserted_indices(Indices::U32((0u32..(verts.len() as u32)).collect::<Vec<_>>()))
+//}
+//
+//fn tris_from_ico_heights(heights: &mut Vec<Vec<Vec<f32>>>) -> Vec<[f32; 3]>{
+//
+//    //useful numbers: p represents phi, d is the magnitude of vert on a major triangle 
+//    let p: f32 = (1.0 + (5.0_f32).sqrt()) / 2.0;
+//    let d: f32 = (1.0 + p *p).sqrt();
+//    let res: i32 = (((1 + 8*heights[0][0].len()) as f64).sqrt() as i32 - 3)/2;
+//    //created to use later
+//    let main_verts = vec![
+//        [0., d, 0.],
+//
+//        [0., 0.85065, -1.7013],
+//        [p, 0.85065, -(d*d - p * p - 0.85065 * 0.85065).sqrt()],
+//		[1., 0.85065, (d*d - 1. - 0.85065*0.85065).sqrt()],
+//		[-1., 0.85065, (d*d - 1. - 0.85065*0.85065).sqrt()],
+//		[-p, 0.85065, -(d*d - p*p - 0.85065*0.85065).sqrt()],
+//
+//        [-1., -0.85065, -(d*d - 1. - 0.85065*0.85065).sqrt()],
+//        [1., -0.85065, -(d*d - 1. - 0.85065*0.85065).sqrt()],
+//        [p, -0.85065, (d*d - p*p - 0.85065*0.85065).sqrt()],
+//        [0., -0.85065, 1.7013],
+//        [-p, -0.85065, (d*d - p*p - 0.85065*0.85065).sqrt()],
+//
+//        [0., -d, 0.]
+//    ];
+//
+//    let mut verts = Vec::new();
+//    
+//    let mut f = 0; //which face
+//    while f<5 { //iterates over the 5 major triangles which share the topmost vert
+//        let v0 = main_verts[0];//c vert
+//        let v1 = main_verts[f+1];//b vert
+//        let v2 = main_verts[((f+1)%5)+1];//a vert
+//
+//        let mut col_index = 0;
+//        while col_index < res{
+//            let mut row_index = 0;
+//            while row_index <= col_index*2{
+//                
+//                let mut iter = 0;
+//                let mut vert0 = [0., 0., 0.];//c vert
+//                let mut vert1 = [0., 0., 0.];//a vert
+//                let mut vert2 = [0., 0., 0.];//b vert
+//
+//                if row_index%2==0{
+//                    while iter<3{
+//                        vert0[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
+//                        vert1[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index + 1 - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
+//                        vert2[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2 + 1) as f32 * v2[iter])/res as f32;
+//
+//                        iter = iter+1;
+//                    }
+//                } else {
+//                    while iter<3{
+//                        vert0[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2 + 1) as f32 * v2[iter])/res as f32;
+//                        vert1[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index+1)/2) as f32 * v1[iter] + ((row_index+1)/2) as f32 * v2[iter])/res as f32;
+//                        vert2[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2) as f32 * v2[iter])/res as f32;
+//                        
+//                        iter = iter+1;
+//                    }
+//                }
+//
+//                let len0 = (vert0[0]*vert0[0] + vert0[1]*vert0[1] + vert0[2]*vert0[2]).sqrt();
+//                let len1 = (vert1[0]*vert1[0] + vert1[1]*vert1[1] + vert1[2]*vert1[2]).sqrt();
+//                let len2 = (vert2[0]*vert2[0] + vert2[1]*vert2[1] + vert2[2]*vert2[2]).sqrt();
+//                
+//                //order is weird, but important
+//                //values correspond to:
+//                //right vert
+//                //vertical vert
+//                //left vert
+//                verts.push([vert1[0] * get_height(&heights, f, 1+row_index/2,   col_index-(row_index+1)/2)/len1,   vert1[1]*get_height(&heights, f, 1+row_index/2,   col_index-(row_index+1)/2)/len1,   vert1[2]*get_height(&heights, f, 1+row_index/2,   col_index-(row_index+1)/2)/len1]);
+//                verts.push([vert0[0] * get_height(&heights, f, (row_index+1)/2, col_index-row_index/2)/len0,       vert0[1]*get_height(&heights, f, (row_index+1)/2, col_index-row_index/2)/len0,       vert0[2]*get_height(&heights, f, (row_index+1)/2, col_index-row_index/2)/len0]);
+//                verts.push([vert2[0] * get_height(&heights, f, row_index/2,     col_index+1-(row_index+1)/2)/len2, vert2[1]*get_height(&heights, f, row_index/2,     col_index+1-(row_index+1)/2)/len2, vert2[2]*get_height(&heights, f, row_index/2,     col_index+1-(row_index+1)/2)/len2]);
+//
+//
+//                row_index = row_index+1;
+//            }
+//            col_index=col_index+1;
+//            
+//        }
+//
+//
+//        f = f+1;
+//    }
+//
+//    let vert_order = [//which vertices to use for each major triangle not on the top or bottom
+//        [6,1,7],
+//        [7,1,2],
+//        [7,2,8],
+//		[8,2,3],
+//		[8,3,9],
+//		[9,3,4],
+//		[9,4,10],
+//		[10,4,5],
+//		[10,5,6],
+//		[6,5,1]
+//    ];
+//    f = 0;
+//
+//    while f< 10{ //iterate through the 10 major triangles that do not have the topmost or bottommost vert
+//        let v0 = main_verts[vert_order[f][0]];//f%2==0: b vert, f%2==1: c vert
+//        let v1 = main_verts[vert_order[f][1]];//f%2==0: c vert, f%2==1: b vert
+//        let v2 = main_verts[vert_order[f][2]];//a vert
+//
+//        let mut col_index = 0;
+//        while col_index < res{
+//            let mut row_index = 0;
+//            while row_index <= 2*col_index{
+//                
+//                let mut iter = 0;
+//                let mut vert0 = [0., 0., 0.];
+//                let mut vert1 = [0., 0., 0.];
+//                let mut vert2 = [0., 0., 0.];
+//
+//                if row_index%2==0{
+//                    while iter<3{
+//                        vert0[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
+//                        vert1[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index + 1 - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
+//                        vert2[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2 + 1) as f32 * v2[iter])/res as f32;
+//
+//                        iter = iter+1;
+//                    }
+//
+//                    
+//                } else {
+//                    while iter<3{
+//                        vert0[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2 + 1) as f32 * v2[iter])/res as f32;
+//                        vert1[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index+1)/2) as f32 * v1[iter] + ((row_index+1)/2) as f32 * v2[iter])/res as f32;
+//                        vert2[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2) as f32 * v2[iter])/res as f32;
+//                        
+//                        iter = iter+1;
+//                    }
+//                }
+//
+//                let len0 = (vert0[0]*vert0[0] + vert0[1]*vert0[1] + vert0[2]*vert0[2]).sqrt();
+//                let len1 = (vert1[0]*vert1[0] + vert1[1]*vert1[1] + vert1[2]*vert1[2]).sqrt();
+//                let len2 = (vert2[0]*vert2[0] + vert2[1]*vert2[1] + vert2[2]*vert2[2]).sqrt();
+//                
+//                
+//                //i am... surprised that this just works for both orientations of mega-tris
+//                //but not complaining
+//                //left corner
+//                //vertical corner
+//                //right corner
+//                verts.push([vert0[0] * get_height(&heights, f+5, row_index/2,     col_index+1-(row_index+1)/2)/len0, vert0[1]*get_height(&heights, f+5, row_index/2,     col_index+1-(row_index+1)/2)/len0, vert0[2]*get_height(&heights, f+5, row_index/2,     col_index+1-(row_index+1)/2)/len0]);
+//                verts.push([vert1[0] * get_height(&heights, f+5, (row_index+1)/2, col_index-row_index/2)/len1, vert1[1]*get_height(&heights, f+5, (row_index+1)/2, col_index-row_index/2)/len1, vert1[2]*get_height(&heights, f+5, (row_index+1)/2, col_index-row_index/2)/len1]);
+//                verts.push([vert2[0] * get_height(&heights, f+5, 1+row_index/2,   col_index-(row_index+1)/2)/len2, vert2[1]*get_height(&heights, f+5, 1+row_index/2,   col_index-(row_index+1)/2)/len2, vert2[2]*get_height(&heights, f+5, 1+row_index/2,   col_index-(row_index+1)/2)/len2]);
+//                
+//
+//                row_index = row_index+1;
+//            }
+//            col_index=col_index+1;
+//            
+//        }
+//
+//
+//        f = f+1;
+//    }
+//    
+//    f = 0;
+//    while f<5 {//iterate over 5 major tris that share the bottommost vert
+//        let v0 = main_verts[11];//c vert
+//        let v1 = main_verts[10-f];//a vert
+//        let v2 = main_verts[10-((f+1)%5)];//b vert
+//
+//        let mut col_index = 0;
+//        while col_index < res{
+//            let mut row_index = 0;
+//            while row_index <= 2*col_index{
+//                
+//                let mut iter = 0;
+//                let mut vert0 = [0., 0., 0.];
+//                let mut vert1 = [0., 0., 0.];
+//                let mut vert2 = [0., 0., 0.];
+//
+//                if row_index%2==0{
+//                    while iter<3{
+//                        vert0[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
+//                        vert1[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index + 1 - row_index/2) as f32 * v1[iter] + (row_index/2) as f32 * v2[iter])/res as f32;
+//                        vert2[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - row_index/2) as f32 * v1[iter] + (row_index/2 + 1) as f32 * v2[iter])/res as f32;
+//
+//                        iter = iter+1;
+//                    }
+//
+//                    
+//                } else {
+//                    while iter<3{
+//                        vert0[iter] = ((res-col_index - 1) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2 + 1) as f32 * v2[iter])/res as f32;
+//                        vert1[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index+1)/2) as f32 * v1[iter] + ((row_index+1)/2) as f32 * v2[iter])/res as f32;
+//                        vert2[iter] = ((res-col_index) as f32 * v0[iter] + (col_index - (row_index-1)/2) as f32 * v1[iter] + ((row_index-1)/2) as f32 * v2[iter])/res as f32;
+//                        
+//                        iter = iter+1;
+//                    }
+//                }
+//
+//                let len0 = (vert0[0]*vert0[0] + vert0[1]*vert0[1] + vert0[2]*vert0[2]).sqrt();
+//                let len1 = (vert1[0]*vert1[0] + vert1[1]*vert1[1] + vert1[2]*vert1[2]).sqrt();
+//                let len2 = (vert2[0]*vert2[0] + vert2[1]*vert2[1] + vert2[2]*vert2[2]).sqrt();
+//                
+//                //order is weird, but important
+//                verts.push([vert1[0] * get_height(&heights, f+15, row_index/2,     col_index+1-(row_index+1)/2)/len1,   vert1[1]*get_height(&heights, f+15, row_index/2,     col_index+1-(row_index+1)/2)/len1, vert1[2]*get_height(&heights, f+15, row_index/2,     col_index+1-(row_index+1)/2)/len1]);
+//                verts.push([vert0[0] * get_height(&heights, f+15, (row_index+1)/2, col_index-row_index/2)/len0,         vert0[1]*get_height(&heights, f+15, (row_index+1)/2, col_index-row_index/2)/len0, vert0[2]*get_height(&heights, f+15, (row_index+1)/2, col_index-row_index/2)/len0]);
+//                verts.push([vert2[0] * get_height(&heights, f+15, 1+row_index/2,   col_index-(row_index+1)/2)/len2,     vert2[1]*get_height(&heights, f+15, 1+row_index/2,   col_index-(row_index+1)/2)/len2, vert2[2]*get_height(&heights, f+15, 1+row_index/2,   col_index-(row_index+1)/2)/len2]);
+//
+//
+//                row_index = row_index+1;
+//            }
+//            col_index=col_index+1;
+//            
+//        }
+//
+//
+//        f = f+1;
+//    }
+//    return verts;
+//}
+//
+//fn get_height(heights: &Vec<Vec<Vec<f32>>>, major_tri: usize, a: i32, b: i32) -> f32{
+//    //magic formula !!! who knows why it works but it does!!! i could probably re-derive it but please dont make me
+//    return heights[(major_tri/5) as usize][(major_tri%5) as usize][(a+(b+a)*(b+a+1)/2) as usize];
+//}
