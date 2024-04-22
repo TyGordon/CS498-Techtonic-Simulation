@@ -1,15 +1,10 @@
 // Libraries/Crates/Packages
 use bevy::
 {
-    app::AppExit, prelude::*,
-    render::
+    app::AppExit, math::quat, prelude::*, render::
     {
-        mesh::{Indices, VertexAttributeValues},
-        render_asset::RenderAssetUsages,
-        render_resource::{PrimitiveTopology, Extent3d, TextureDimension, TextureFormat},
-        camera::RenderTarget,
-    },
-    window::WindowRef,
+        camera::{self, RenderTarget}, mesh::{Indices, VertexAttributeValues}, render_asset::RenderAssetUsages, render_resource::{Extent3d, PrimitiveTopology, TextureDimension, TextureFormat}
+    }, window::WindowRef
 };
 
 fn main()
@@ -92,10 +87,11 @@ fn main()
     // Add systems to the main app
     app.add_plugins(DefaultPlugins)
         .init_state::<AppState>()
-        .add_systems(OnEnter(AppState::MainMenu), (camera_setup, setup, setup2))
-        .add_systems(Update, (button_system.run_if(in_state(AppState::MainMenu)), input_handler.run_if(in_state(AppState::MainMenu))))
-        .add_systems(OnEnter(AppState::Simulate), setup2)
-        .add_systems(Update, input_handler.run_if(in_state(AppState::Simulate)));
+        .add_systems(Startup, camera_setup)
+        .add_systems(OnEnter(AppState::MainMenu), (menu_setup, render_setup))
+        .add_systems(Update, (main_button_system.run_if(in_state(AppState::MainMenu)), input_handler.run_if(in_state(AppState::MainMenu))))
+        .add_systems(OnEnter(AppState::Simulate), (simulate_gui, render_setup))
+        .add_systems(Update, (simulate_button_system.run_if(in_state(AppState::Simulate)), input_handler.run_if(in_state(AppState::Simulate))));
 
     // Run the main app
     app.run();
@@ -126,6 +122,15 @@ enum MenuAction
     Quit,
 }
 
+#[derive(Component)]
+enum SimulateAction
+{
+    Pause,
+    StepBack,
+    Save,
+    Quit,
+}
+
 #[derive(Resource)]
 struct HeightValues {
     values: Vec<Vec<f32>>,
@@ -134,6 +139,7 @@ struct HeightValues {
 // This function creates a camera (can be used for main app and subapp)
 fn camera_setup(mut commands: Commands)
 {
+
     // Create the UI window (camera)
     commands.spawn
     (
@@ -153,13 +159,25 @@ fn camera_setup(mut commands: Commands)
             ..default()
         }
     );
+
+    //load light source into scene
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            shadows_enabled: true,
+            intensity: 10_000_000.,
+            range: 100.0,
+            ..default()
+        },
+        transform: Transform::from_xyz(8.0, 2., 8.0),
+        ..default()
+    });
 }
 
 // This function handles
 //  1. When a button is pressed
 //  2. When the mouse hovers over a button
 //  3. When the mouse is not hovering over a button
-fn button_system
+fn main_button_system
 (
     mut interaction_query: Query<
         (
@@ -174,9 +192,9 @@ fn button_system
 
     mut commands: Commands,
 
-    mut entity_query: Query<(Entity, &Transform), With<Shape>>,
-    //mut window_query: Query<(Entity, &Camera), With<Transform>>,
+    mut entity_query: Query<(Entity, &Transform), With<Handle<Mesh>>>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut button_query: Query<(Entity, &Style)>,
 )
 {
     for (interaction, menu_action, mut border_color) in &mut interaction_query
@@ -197,37 +215,20 @@ fn button_system
                         let (entity, _) = entity_query.single_mut();
                         commands.entity(entity).despawn();
 
-                        //let (window_entity, mut test) = window_query.single_mut();
+                        // Delete all buttons and labels
+                        for (entity, _) in &mut button_query
+                        {
+                            commands.entity(entity).despawn();
+                        }
 
-                        // Create the second window
-                        let second_window = commands.spawn
-                        (
-                            Window
-                            {
-                                title: "Simulation".to_owned(),
-                                ..default()
-                            }
-                        ).id();
+                        // Remove the height values resource
+                        commands.remove_resource::<HeightValues>();
 
-                        // Create a camera for the new window
-                        commands.spawn
-                        (
-                            Camera3dBundle
-                            {
-                                transform: Transform::from_translation(Vec3::new(0., 0., 10.0)).looking_at(Vec3::ZERO, Vec3::Y),
-                                camera: Camera
-                                {
-                                    target: RenderTarget::Window(WindowRef::Entity(second_window)),
+                        // Create a new height values resource
+                        let h = HeightValues { values: Vec::<Vec<f32>>::new() };
 
-                                    // Change the background color of the window
-                                    clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.2, 0.6274509)),
-
-                                    ..default()
-                                },
-
-                                ..default()
-                            }
-                        );
+                        // Insert the new height values resource
+                        commands.insert_resource(h);
 
                         // Switch app states to start the simulation
                         next_state.set(AppState::Simulate);
@@ -266,8 +267,94 @@ fn button_system
     }
 }
 
+fn simulate_button_system
+(
+    mut interaction_query: Query<
+        (
+            &Interaction,
+            &SimulateAction,
+            &mut BorderColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+
+    mut commands: Commands,
+
+    mut entity_query: Query<(Entity, &Transform), With<Shape>>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut button_query: Query<(Entity, &Style)>,
+)
+{
+    for (interaction, simulate_action, mut border_color) in &mut interaction_query
+    {
+
+        match *interaction
+        {
+            // If the button is pressed, determine which one was pressed
+            Interaction::Pressed =>
+            {
+                match *simulate_action
+                {
+                    SimulateAction::Pause =>
+                    {
+                        // If the pause button was pressed, stop the simulation and replace it with a play button.
+                    }
+
+                    SimulateAction::StepBack =>
+                    {
+                        // If the step back button was pressed, move the simulation back one state.
+                    }
+
+                    SimulateAction::Save =>
+                    {
+                        // If the save button was pressed, save all the data of the simulation's current state.
+                    }
+                    
+                    SimulateAction::Quit =>
+                    {
+                        // If the quit button was pressed, go back to the main menu
+
+                        // Delete the icosahedron
+                        let (entity, _) = entity_query.single_mut();
+                        commands.entity(entity).despawn();
+
+                        // Delete all buttons and labels
+                        for (entity, _) in &mut button_query
+                        {
+                            commands.entity(entity).despawn();
+                        }
+
+                        // Remove the height values resource
+                        commands.remove_resource::<HeightValues>();
+
+                        // Create a new height values resource
+                        let h = HeightValues { values: Vec::<Vec<f32>>::new() };
+
+                        // Insert the new height values resource
+                        commands.insert_resource(h);
+
+                        next_state.set(AppState::MainMenu);
+                    }
+                }
+            }
+
+            // Highlight the border of the button when the mouse is hovering over it
+            Interaction::Hovered =>
+            {
+                border_color.0 = Color::LIME_GREEN;
+            }
+
+            // Set the border color of the button to a default color when no mouse is over it
+            Interaction::None =>
+            {
+                border_color.0 = Color::WHITE;
+            }
+        }
+    }
+}
+
 // This function handles setting up the main menu window and other components.
-fn setup(mut commands: Commands)
+fn menu_setup(mut commands: Commands)
 {
 
     // Spawn in a text field for the title
@@ -324,6 +411,7 @@ fn setup(mut commands: Commands)
     );
 
     // Spawn menu buttons
+
     commands.spawn
     (
         // Create the node that contains the buttons
@@ -639,7 +727,323 @@ fn setup(mut commands: Commands)
     );
 }
 
-fn setup2(
+// This function handles setting up the gui hud during the simulation.
+fn simulate_gui
+(
+    mut commands: Commands,
+)
+{
+
+    // Spawn control buttons
+    commands.spawn
+    (
+        // Create the node that contains the buttons
+        (
+            NodeBundle
+            {
+                style: Style
+                {
+                    // Set the ideal height of the buttons row in pixels
+                    top: Val::Px(0.0),
+
+                    // Horizontally align buttons node
+                    align_items: AlignItems::Center,
+
+                    // Horizontally align buttons node
+                    justify_self: JustifySelf::End,
+
+                    // Align the buttons in a row
+                    flex_direction: FlexDirection::Row,
+
+                    ..default()
+                },
+
+                ..default()
+            },
+        )
+    )
+
+    .with_children
+    (
+        |parent|
+        {
+            parent.spawn
+            (
+                (
+                    // Create the pause button within the node
+                    ButtonBundle
+                    {
+                        style: Style
+                        {
+                            // Width of the textbox of the button in pixels
+                            width: Val::Px(50.0),
+
+                            // Height of the textbox of the button in pixels
+                            height: Val::Px(65.0),
+
+                            // Add the border to the button and set the thickness in pixels
+                            border: UiRect::all(Val::Px(3.0)),
+
+                            // Horizontally align child text
+                            justify_content: JustifyContent::Center,
+
+                            // Vertically align child text
+                            align_items: AlignItems::Center,
+
+                            ..default()
+                        },
+
+                        // Set the border color of the button
+                        border_color: BorderColor(Color::WHITE),
+
+                        // Set the background color of the button
+                        background_color: Color::rgb(0.15, 0.15, 0.15).into(),
+
+                        ..default()
+                    },
+
+                    SimulateAction::Pause,
+                )
+            )
+
+            .with_children
+            (
+                |parent|
+                {
+                    parent.spawn
+                    (
+                        // Create the text within the button
+                        TextBundle::from_section
+                        (
+                            // Set the text of the button
+                            "||",
+
+                            // Set the style of the text of the button
+                            TextStyle
+                            {
+                                // Set the font of the text to default
+                                font: default(),
+
+                                // Set the font size of the text
+                                font_size: 20.0,
+
+                                // Set the color of the text
+                                color: Color::rgb(0.9, 0.9, 0.9),
+                            },
+                        )
+                    );
+                }
+            );
+
+            parent.spawn
+            (
+                (
+                    // Create the step back button within the node
+                    ButtonBundle
+                    {
+                        style: Style
+                        {
+                            // Width of the textbox of the button in pixels
+                            width: Val::Px(50.0),
+
+                            // Height of the textbox of the button in pixels
+                            height: Val::Px(65.0),
+
+                            // Add the border to the button and set the thickness in pixels
+                            border: UiRect::all(Val::Px(3.0)),
+
+                            // Horizontally center child text
+                            justify_content: JustifyContent::Center,
+
+                            // Vertically center child text
+                            align_items: AlignItems::Center,
+
+                            ..default()
+                        },
+
+                        // Set the border color of the button
+                        border_color: BorderColor(Color::WHITE),
+
+                        // Set the background color of the button
+                        background_color: Color::rgb(0.15, 0.15, 0.15).into(),
+
+                        ..default()
+                    },
+
+                    SimulateAction::StepBack,
+                )
+            )
+
+            .with_children
+            (
+                |parent|
+                {
+                    parent.spawn
+                    (
+                        // Create the text within the button
+                        TextBundle::from_section
+                        (
+                            // Set the text of the button
+                            "<||",
+
+                            // Set the style of the text of the button
+                            TextStyle
+                            {
+                                // Set the font of the text to default
+                                font: default(),
+
+                                // Set the font size of the text
+                                font_size: 20.0,
+
+                                // Set the color of the text
+                                color: Color::rgb(0.9, 0.9, 0.9),
+                            },
+                        )
+                    );
+                }
+            );
+
+            parent.spawn
+            (
+                (
+                    // Create the folder selection button within the node
+                    // The button lets the user select what folder to save simulations to.
+                    ButtonBundle
+                    {
+                        style: Style
+                        {
+                            // Width of the textbox of the button in pixels
+                            width: Val::Px(65.0),
+
+                            // Height of the textbox of the button in pixels
+                            height: Val::Px(65.0),
+
+                            // Add the border to the button and set the thickness in pixels
+                            border: UiRect::all(Val::Px(3.0)),
+
+                            // Horizontally align child text
+                            justify_content: JustifyContent::Center,
+
+                            // Vertically align child text
+                            align_items: AlignItems::Center,
+
+                            ..default()
+                        },
+
+                        // Set the border color of the button
+                        border_color: BorderColor(Color::WHITE),
+
+                        // Set the background color of the button
+                        background_color: Color::rgb(0.15, 0.15, 0.15).into(),
+
+                        ..default()
+                    },
+
+                    SimulateAction::Save,
+                )
+            )
+
+            .with_children
+            (
+                |parent|
+                {
+                    parent.spawn
+                    (
+                        // Create the text within the button
+                        TextBundle::from_section
+                        (
+                            // Set the text of the button
+                            "Save",
+
+                            // Set the style of the text of the button
+                            TextStyle
+                            {
+                                // Set the font of the text to default
+                                font: default(),
+
+                                // Set the font size of the text
+                                font_size: 20.0,
+
+                                // Set the color of the text
+                                color: Color::rgb(0.9, 0.9, 0.9),
+                            },
+                        )
+                    );
+                }
+            );
+
+            parent.spawn
+            (
+                (
+                    // Create the quit button within the node
+                    ButtonBundle
+                    {
+                        style: Style
+                        {
+                            // Width of the textbox of the button in pixels
+                            width: Val::Px(65.0),
+
+                            // Height of the textbox of the button in pixels
+                            height: Val::Px(65.0),
+
+                            // Add the border to the button and set the thickness in pixels
+                            border: UiRect::all(Val::Px(3.0)),
+
+                            // Horizontally align child text
+                            justify_content: JustifyContent::Center,
+
+                            // Vertically align child text
+                            align_items: AlignItems::Center,
+
+                            ..default()
+                        },
+
+                        // Set the border color of the button
+                        border_color: BorderColor(Color::WHITE),
+
+                        // Set the background color of the button
+                        background_color: Color::rgb(0.15, 0.15, 0.15).into(),
+
+                        ..default()
+                    },
+
+                    SimulateAction::Quit,
+                )
+            )
+
+            .with_children
+            (
+                |parent|
+                {
+                    parent.spawn
+                    (
+                        // Create the text within the button
+                        TextBundle::from_section
+                        (
+                            // Set the text of the button
+                            "Quit",
+
+                            // Set the style of the text of the button
+                            TextStyle
+                            {
+                                // Set the font of the text to default
+                                font: default(),
+
+                                // Set the font size of the text
+                                font_size: 20.0,
+
+                                // Set the color of the text
+                                color: Color::rgb(0.9, 0.9, 0.9),
+                            },
+                        )
+                    );
+                }
+            );
+        }
+    );
+}
+
+fn render_setup(
 	mut commands: Commands,
 	mut materials: ResMut<Assets<StandardMaterial>>,
 	mut meshes: ResMut<Assets<Mesh>>,
@@ -651,7 +1055,6 @@ fn setup2(
     let debug_material = materials.add(StandardMaterial {
         ..default()
     });
-
 
     //let mut heights = &h.values;
     //let mut heights :std::vec::Vec<Vec<Vec<f32>>> = Vec::<Vec<Vec<f32>>>::new();
@@ -682,24 +1085,6 @@ fn setup2(
         },
         Shape,
 	));
-    //load light source into scene
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
-            shadows_enabled: true,
-            intensity: 10_000_000.,
-            range: 100.0,
-            ..default()
-        },
-        transform: Transform::from_xyz(8.0, 2., 8.0),
-        ..default()
-    });
-
-    //load camera into scene
-    // commands.spawn(Camera3dBundle {
-    //     transform: Transform::from_translation(Vec3::new(0., 0., 10.0)).looking_at(Vec3::ZERO, Vec3::Y),
-    //     ..Default::default()
-    // });
-
 }
 
 //lets you spin the mesh with X/Y/Z keys
