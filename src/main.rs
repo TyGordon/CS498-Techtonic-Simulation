@@ -7,6 +7,8 @@ use bevy::
     }, window::WindowRef
 };
 
+use bevy_save::prelude::*;
+
 fn main()
 {
     //subdivided triangle coordinate reference - largely unused for now, but in future will likely be used to lookup height values when generating mesh
@@ -1236,6 +1238,35 @@ fn tris_from_rect_heights(heights: &mut Vec<Vec<f32>>) -> Vec<[f32; 3]>{
     //[row 0 vert 0, row1 vert 0, ... row1 vert h_verts-1, row2 vert 0 ... row v_verts-2 vert h_verts-1, row v_verts-1 vert 0]
 
     return verts;
+}
+
+struct SavePipeline;
+
+// Save Pipeline
+impl Pipeline for SavePipeline {
+    type Backend = DefaultDebugBackend;
+    type Format = DefaultDebugFormat;
+
+    type Key<'a> = &'a str;
+
+    fn key(&self) -> Self::Key<'_> {
+        "saves"
+    }
+
+    fn capture(builder: SnapshotBuilder) -> Snapshot {
+        builder
+            //.deny::<Mesh2dHandle>()
+            .deny::<Handle<ColorMaterial>>()
+            .extract_resource::<HeightValues>()
+            .extract_rollbacks()
+            .build()
+    }
+
+    fn apply(world: &mut World, snapshot: &Snapshot) -> Result<(), bevy_save::Error> {
+        snapshot
+            .applier(world)
+            .apply()
+    }
 }
 
 
