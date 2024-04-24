@@ -14,80 +14,14 @@ use bevy::
 
 fn main()
 {
-    //subdivided triangle coordinate reference - largely unused for now, but in future will likely be used to lookup height values when generating mesh
-    //
-    //           c
-    //          /\
-    //         /__\
-    //        /\  /\
-    //       /__\/__\
-    //      /\  /\  /\
-    //     /__\/__\/__\
-    //    /\  /\  /\  /\
-    //   /__\/__\/__\/__\
-    //  b                a
-    //
-    //
-    //
-    //  b________________a
-    //   \  /\  /\  /\  /
-    //    \/__\/__\/__\/
-    //     \  /\  /\  /
-    //      \/__\/__\/
-    //       \  /\  /
-    //        \/__\/
-    //         \  /
-    //          \/
-    //           c
-    //
-    //
-    //
-    //because it is 2d, we can track each point on a supertriangle uniquely with only 2 coordinates 
-    //a is distance from left edge, b is distance from right edge, c won't be stored, but represents dist from the horizontal edge and can be calculated as 2^subdivisions - a - b
-    //if any of the coords are negative, we are on a different supertri.
-    //if any of the coords are 0, we will have an edge (haha get it) case that we need to figure out because two (on edge) or five (on corner) supertris share this point
-    //the more i think about this the more i think it should be ok, because it will only ever be a problem if the same point on two supertris has two different values, and we should be able to prevent that
-    //
-    //
-    //
-    //icosahedron net array reference
-    //                                 /\  /\  /\  /\  /\   [0,0]-[0,4]
-    //      /\  /\  /\  /\  /\        /__\/__\/__\/__\/__\
-    //     /__\/__\/__\/__\/__\       \  /\  /\  /\  /\  /
-    //    /\  /\  /\  /\  /\  /        \/  \/  \/  \/  \/   [1,0]-[1,4]
-    //   /__\/__\/__\/__\/__\/  ==>  /\  /\  /\  /\  /\     [2,0]-[2,4]
-    //   \  /\  /\  /\  /\  /       /__\/__\/__\/__\/__\
-    //    \/  \/  \/  \/  \/        \  /\  /\  /\  /\  /
-    //                               \/  \/  \/  \/  \/     [3,0]-[3,4]
-    //
-    //
-    //coords of adjacent supertri to super tri with index [i,j] by i (aka row):
-    // i  left          right         vertical
-    // 0: [0, (j-1)%5], [0, (j+1)%5], [1, j]
-    // 1: [2, j],       [2, (j+1)%5], [0, j]
-    // 2: [1, (j-1)%5], [1, j],       [3, j]
-    // 3: [3, (j-1)%5], [3, (j+1)%5], [2, j]
-    //
-    //
-    // phi = (1 + sqrt(5))/2)
-    // d = sqrt(1 + phi^2) = sqrt( 2 * ( 5 + sqrt(5)))/2 ~= 1.902113
-    //
-    //
-    // coords of top/bottom point: (0, d, 0), (0, -d, 0)
-    //
-    // coords of top ring: (0, 0.85065, -1.7013),  (phi, 0.85065, -sqrt(d^2 - phi^2 - 0.85065^2), (1, 0.85065, sqrt(d^2 - 1 - 0.85065^2)), (-1, 0.85065, sqrt(d^2 - 1 - 0.85065^2)), (-phi, 0.85065, -sqrt(d^2 - phi^2 - 0.85065^2))
-    //
-    // coords of bottom ring: (-1, -0.85065, -sqrt(d^2 - 1 - 0.85065^2)), (1, -0.85065, -sqrt(d^2 - 1 - 0.85065^2)), (phi, -0.85065, sqrt(d^2 - phi^2 - 0.85065^2)), (0, -0.85065, 1.7013), (-phi, -0.85065, sqrt(d^2 - phi^2 - 0.85065^2))
-
-    //let mut 
-    
-    let h = HeightValues { values: Vec::<Vec<f32>>::new() };
+    // Create a vector of structs to hold the height values
+    let pub mut h = Vec::<Vec<HeightValues>>::new();
 
     // Create the main menu app
     let mut app = App::new();
 
     // Insert the heights into the app
-    app.insert_resource(h);
+    app.insert_resource(tiles);
 
     // Add systems to the main app
     app.add_plugins(DefaultPlugins)
@@ -128,8 +62,21 @@ enum MenuAction
 
 #[derive(Resource)]
 struct HeightValues {
-    values: Vec<Vec<f32>>,
-}
+        water : f32
+        suspended_sediment : f32
+        bed_sediment : f32
+        bedrock : f32
+        n_volume : f32
+        n_speed : f32
+        e_volume : f32
+        e_speed : f32
+        s_volume : f32
+        s_speed : f32
+        w_volume : f32
+        w_speed : f32
+    }
+
+
 
 // This function creates a camera (can be used for main app and subapp)
 fn camera_setup(mut commands: Commands)
@@ -761,7 +708,7 @@ fn input_handler(
 
 }
 
-
+//creates a mesh of a globe with a rectangular grid
 fn create_globe_rect_mesh(h_verts: u32, v_verts: u32, heights: &mut Vec<Vec<f32>>) -> Mesh {
     for _row_index in 0..v_verts{ //represents which row we are in
 		let mut row_vec = vec![];
@@ -853,6 +800,207 @@ fn tris_from_rect_heights(heights: &mut Vec<Vec<f32>>) -> Vec<[f32; 3]>{
     return verts;
 }
 
+    //Erosion code
+
+    //returns the height of the water, bed sediment, and bedrock. The suspended sediment is not included in this calculation because it is dispereced throughout the water
+    fn totalHeight (x : i32, y : i32) -> f32 {
+        return h[x][y].water + h[x][y].bed_sediment + h[x][y].bedrock;
+    }
+
+    //returns the total volume of water flowing from the tile
+    fn totalOutflowVolume (x: i32, y : i32) -> f32 {
+        return h[x][y].flow.n_volume + h[x][y].flow.e_volume + h[x][y].flow.s_volume + h[x][y].flow.w_volume;
+    }
+
+    //adds the amount of percipitation the tile experiences to the water level
+    fn precipitation(x : i32, y : i32, percipitation: f32) {
+        h[x][y].water += percipitation;
+    }
+
+    //evaluates the flow of water from the tile to its neighbors
+    fn waterFlow (x : i32, y : i32, n_height: f32, e_height: f32, s_height: f32, w_height: f32) {
+        let mut newFlow = h[x][y].flow.n_volume + h[x][y].flow.n_speed * h[x][y].totalHeight - n_height;
+        if (newFlow > 0) {
+            flow.n_volume = newFlow;
+        }
+        else {
+            flow.n_volume = 0;
+        }
+        newFlow = h[x][y].flow.e_volume + h[x][y].flow.e_speed * h[x][y].totalHeight - e_height;
+        if (newFlow > 0) {
+            flow.e_volume = newFlow;
+        }
+        else {
+            flow.e_volume = 0;
+        }
+        newFlow = h[x][y].flow.s_volume + h[x][y].flow.s_speed * h[x][y].totalHeight - s_height;
+        if (newFlow > 0) {
+            flow.s_volume = newFlow;
+        }
+        else {
+            flow.s_volume = 0;
+        }
+        newFlow = h[x][y].flow.w_volume + h[x][y].flow.w_speed * h[x][y].totalHeight - w_height;
+        if (newFlow > 0) {
+            flow.w_volume = newFlow;
+        }
+        else {
+            flow.w_volume = 0;
+        }
+    }
+
+    //calculates the scaler value for the flowScaling function
+    fn scaler (x : i32, y : i32) -> f32 {
+        let newScaler = h[x][y].water / (h[x][y].flow.n_volume + h[x][y].flow.e_volume + h[x][y].flow.s_volume + h[x][y].flow.w_volume);
+        if (newScaler > 1) {
+            h[x][y].scaler = 1; 
+        } else {
+            h[x][y].scaler = newScaler;
+        }
+    }
+
+    //makes sure that the amount of water flowing out of the tile is proportional to the amount of water flowing in
+    fn flowScaling (x : i32, y : i32) {
+        let scaler = h[x][y].scaler();
+        flow.n_volume = scaler * h[x][y].flow.n_volume;
+        flow.e_volume = scaler * h[x][y].flow.e_volume;
+        flow.s_volume = scaler * h[x][y].flow.s_volume;
+        flow.w_volume = scaler * h[x][y].flow.w_volume;
+    }
+
+    //changes the water level of the tile based on the flow of water to and from its neighbors
+    fn waterLevelUpdate (x : i32, y : i32, north: f32, east: f32, south: f32, west: f32) {
+        h[x][y].water = h[x][y].water + north + east + south + west - h[x][y].flow.n_volume - h[x][y].flow.e_volume - h[x][y].flow.s_volume - h[x][y].flow.w_volume;
+    }
+
+    //average speed of the water flowing in and out of the tile
+    fn waterSpeed (x : i32, y : i32, north: f32, east: f32, south: f32, west: f32) -> f32{
+        return (h[x][y].flowspeed = h[x][y].flowspeed + north + east + south + west - h[x][y].flow.n_speed - h[x][y].flow.e_speed - h[x][y].flow.s_speed - h[x][y].flow.w_speed) / 2;
+    }
+
+    //finds the slope of the tile based on the height of the tile and its neighbors
+    fn slope (x : i32, y : i32, north: f32, east: f32, south: f32, west: f32) -> f32 {
+        let slope = h[x][y].getTotalHeight - north;
+
+        if (slope < h[x][y].getTotalHeight - east) {
+            slope = h[x][y].getTotalHeight - east;
+        }
+
+        if (slope < h[x][y].getTotalHeight - south) {
+            slope = h[x][y].getTotalHeight - south;
+        }
+
+        if (slope < h[x][y].getTotalHeight - west) {
+            slope = h[x][y].getTotalHeight - west;
+        }
+        return slope;
+    }
+
+    //represents how much power the water has to erode sediment, higher values should result in more erosion and dissolution and less deposition
+    fn power (x : i32, y : i32, waterSpeed: f32, slope: f32) -> f32 {
+        return waterSpeed.sqrtf() * slope;
+    }
+
+    //the amount of sediment the water can carry
+    fn capacity (x : i32, y : i32, waterSpeed: f32, slope: f32) -> f32{
+        return 1 * waterSpeed.sqrtf() * slope;
+    }
+
+    //deposit suspended sediment into the bed sediment
+    fn depositSediment (x : i32, y : i32, pScaler: f32) {
+        let transferredSediment = (h[x][y].suspended_sediment - h[x][y].capacity) * (1 / h[x][y].power.sqrtf() * pScaler);
+        h[x][y].bed_sediment += transferredSediment;
+        h[x][y].suspended_sediment -= transferredSediment;
+    }
+
+    //erode bed sediment into the suspended sediment
+    fn disolveSediment (x : i32, y : i32, pScaler: f32){
+        let transferredSediment = (h[x][y].capacity - h[x][y].suspended_sediment) * (h[x][y].power.sqrtf() * pScaler);
+        h[x][y].suspended_sediment += transferredSediment;
+        h[x][y].bed_sediment -= transferredSediment;
+    }
+
+    //erode bedrock into the suspended sediment
+    fn erodeBedrock (x : i32, y : i32, target: f32) {
+        let transferredSediment = (h[x][y].capacity - h[x][y].suspended_sediment) * (h[x][y].power.sqrtf() * pScaler);
+        h[x][y].suspended_sediment += transferredSediment;
+        h[x][y].bedrock -= transferredSediment;
+    }
+
+    //handles the erosion, deposition, and dissolution of sediment
+    fn erosion (x : i32, y : i32, target: f32) {
+        //deposition
+        if (h[x][y].suspended_sediment > h[x][y].capacity * target) {
+            depositSediment(1);
+        }
+        //erosion (if there insufficient bed sediment)
+        else if (h[x][y].bed_sediment < capacity * .05;) {
+            erodeSediment(1);
+        }
+        //dissolution
+        else {
+            disolveSediment(1);
+        }
+    }
+
+    //TODO: implement this function
+    fn sedimentTransfer(x : i32, y : i32, north: tile, east: tile, south: tile, west: tile) {
+        /*
+        waterLevelUpdate = h[x][y].waterLevelUpdate();
+        totalFlowVolume = h[x][y].totalFlowVolume();
+        water = h[x][y].water;
+        suspended_sediment = h[x][y].suspended_sediment;
+        h[x][y].suspended_sediment = suspended_sediment + north.waterLevelUpdate / north.water * north.flow.s_volume / north.getTotalFlowVolume * north.suspended_sediment -
+        waterLevelUpdate / water * h[x][y].flow.n_volume / totalFlowVolume * suspended_sediment +
+        east.waterLevelUpdate / east.water * east.flow.w_volume / east.getTotalFlowVolume * east.suspended_sediment -
+        waterLevelUpdate / water * h[x][y].flow.e_volume / totalFlowVolume * suspended_sediment +
+        south.waterLevelUpdate / south.water * south.flow.n_volume / south.getTotalFlowVolume * south.suspended_sediment -
+        waterLevelUpdate / water * h[x][y].flow.s_volume / totalFlowVolume * suspended_sediment +
+        west.waterLevelUpdate / west.water * west.flow.e_volume / west.getTotalFlowVolume * west.suspended_sediment -
+        waterLevelUpdate / water * h[x][y].flow.w_volume / totalFlowVolume * suspended_sediment;
+        */
+    }
+
+    //finds the tile directly north of the given tile coordinates, if the tile is at the north pole, it will return the tile opposite the pole.
+    fn getNorth (x : i32, y : i32, worldHeight : i32, worldWidth : i32) -> tile {
+        if (y == worldHeight - 1) {
+            return h[x+(worldWidth/2)%worldWidth][y];
+        }
+        else {
+            return h[x][y + 1];
+        }
+    }
+
+    fn getEast (x : i32, y : i32, worldWidth : i32) -> tile {
+        return h[(x + 1)%worldWidth][y];
+    }
+
+    fn getSouth (x : i32, y : i32, worldHeight : i32, worldWidth : i32) -> tile {
+        if (y == 0) {
+            return h[x+(worldWidth/2)%worldWidth][y];
+        }
+        else {
+            return h[x][y - 1];
+        }
+    }
+
+    fn getWest (x : i32, y : i32, worldWidth : i32) -> tile {
+        return h[(x - 1)%worldWidth][y];
+    }
+
+    //preforms all the functions needed to update the tile for one time step
+    fn step(x : i32, y : i32, north: tile, east: tile, south: tile, west: tile) {
+        h[x][y].precipitation();
+        h[x][y].waterFlow(north.height, east.height, south.height, west.height);
+        h[x][y].scaler();
+        h[x][y].flowScaling();
+        h[x][y].waterLevelUpdate(north.flow.s_volume, east.flow.w_volume, south.flow.n_volume, west.flow.e_volume);
+        waterSpeed = h[x][y].waterSpeed(north.flow.s_speed, east.flow.w_speed, south.flow.n_speed, west.flow.e_speed);
+        slope = h[x][y].slope(north.height, east.height, south.height, west.height);
+        h[x][y].power(slope, waterSpeed);
+        h[x][y].capacity(slope, waterSpeed);
+        h[x][y].erosion(.05);
+    }
 
 
 //#[rustfmt::skip]
